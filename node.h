@@ -52,7 +52,8 @@ public:
 	inline void do_getblocktemplate()
 	{
 		response rsp;
-		make_node_call("getjobtemplate", "", rsp);
+		make_node_call("getjobtemplate", "\"algorithm\":\"randomx\"", rsp);
+		//make_node_call("getblocktemplate", "", rsp);
 	}
 
 	void shutdown()
@@ -100,10 +101,7 @@ private:
 	std::thread node_thd;
 	std::thread recv_thd;
 
-	std::condition_variable cv_login;
-	std::mutex cv_login_mtx;
 	std::mutex chk_mtx;
-	std::atomic<bool> logged_in;
 
 	std::mutex call_mtx;
 	std::unordered_map<size_t, std::promise<response>> call_map;

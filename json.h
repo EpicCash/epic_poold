@@ -25,6 +25,27 @@ inline const Value& GetObjectMemberT(const Value& obj, const char* key)
 		throw std::runtime_error(std::string("Key ") + key + " does not exist");
 }
 
+inline int64_t GetJsonCallId(const Value& obj)
+{
+	lpcJsVal v = GetObjectMember(obj, "id");
+
+	if(v == nullptr)
+		throw std::runtime_error(std::string("Key id does not exist"));
+
+	if(v->IsString())
+	{
+		if(strcmp(v->GetString(), "Stratum") == 0)
+			return -1;
+		else
+			return std::stoull(v->GetString());
+	}
+
+	if(v->IsUint())
+		return v->GetUint();
+
+	throw std::runtime_error(std::string("Key id has wrong type, expected a number"));
+}
+
 inline uint64_t GetJsonUInt64(const Value& obj, const char* key)
 {
 	lpcJsVal v = GetObjectMember(obj, key);

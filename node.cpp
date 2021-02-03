@@ -10,17 +10,17 @@
 #include <errno.h>
 #include <string.h>
 
+#include "log.hpp"
+
 node::node() : domAlloc(json_dom_buf, json_buffer_len),
 	parseAlloc(json_parse_buf, json_buffer_len),
 	jsonDoc(&domAlloc, json_buffer_len, &parseAlloc),
-	logged_in(false), g_call_id(1), sock_fd(-1)
+	g_call_id(1), sock_fd(-1)
 {
 }
 
 bool node::node_connect(const char* addr, const char* port)
 {
-	logged_in = false;
-
 	addrinfo hints = { 0 };
 	hints.ai_family = AF_UNSPEC;
 	hints.ai_socktype = SOCK_STREAM;
@@ -29,7 +29,7 @@ bool node::node_connect(const char* addr, const char* port)
 	addrinfo *ptr;
 	if (getaddrinfo(addr, port, &hints, &ptr) != 0)
 	{
-		std::cout << "getaddrinfo failed" << std::endl;
+		logger::inst().log("getaddrinfo failed");
 		return false;
 	}
 
@@ -38,7 +38,7 @@ bool node::node_connect(const char* addr, const char* port)
 	if(sock_fd < 0)
 	{
 		sock_fd = -1;
-		std::cout << "socket failed" << std::endl;
+		logger::inst().log("socket failed");
 		return false;
 	}
 
@@ -49,7 +49,7 @@ bool node::node_connect(const char* addr, const char* port)
 	{
 		close(sock_fd);
 		sock_fd = -1;
-		std::cout << "connect failed" << std::endl;
+		logger::inst().log("connect failed");
 		return false;
 	}
 
@@ -103,12 +103,14 @@ void node::recv_main()
 			msgstart += retlen;
 		}
 
+		if(retlen < 0)
+			break;
+
 		//Got leftover data? Move it to the front
 		if (datalen > 0 && recv_buffer != msgstart)
 			memmove(recv_buffer, msgstart, datalen);
 	}
 
-	logged_in = false;
 	close(sock_fd);
 	sock_fd = -1;
 }
@@ -177,20 +179,8 @@ void node::persistent_connect()
 			std::this_thread::sleep_for(std::chrono::seconds(5));
 		first = false;
 
-		if(logged_in)
-			return;
-
-		if(!node_connect(host.c_str(), port.c_str()))
-			continue;
-
-		std::unique_lock<std::mutex> lck2(cv_login_mtx);
-		if(cv_login.wait_for(lck2, std::chrono::seconds(5), [&]{return logged_in.load();}))
-			return;
-
-		std::cout << "Login timed out!" << std::endl;
-
-		node_disconnect();
-		recv_thd.join();
+		if(node_connect(host.c_str(), port.c_str()))
+			break;
 	}
 }
 
@@ -207,7 +197,9 @@ ssize_t node::json_proc_msg(char* msg, size_t msglen)
 	if(i == msglen)
 		return 0;
 
+	msglen = i+1;
 	msg[i] = '\0';
+
 	jsonDoc.SetNull();
 	parseAlloc.Clear();
 	domAlloc.Clear();
@@ -220,42 +212,40 @@ ssize_t node::json_proc_msg(char* msg, size_t msglen)
 		return -1;
 	}
 
-	lpcJsVal result, error;
+	lpcJsVal result, error = nullptr;
 	//todo: needs to be caught
-	size_t call_id = GetJsonUInt64(jsonDoc, "id");
+
+	ssize_t call_id = GetJsonCallId(jsonDoc);
 	const char* method = GetJsonString(jsonDoc, "method");
-
-	result = GetObjectMember(jsonDoc, "result");
-	error = GetObjectMember(jsonDoc, "error");
-
-	if(result == nullptr && error == nullptr)
-	{
-		std::cout << "JSON parsing error" << std::endl;
-		return -1;
-	}
-
 	bool has_error = false;
-	if(error != nullptr && !error->IsNull())
-		has_error = true;
+
+	if(call_id != -1)
+	{
+		result = GetObjectMember(jsonDoc, "result");
+		error = GetObjectMember(jsonDoc, "error");
+
+		if(result == nullptr && error == nullptr)
+		{
+			std::cout << "JSON parsing error" << std::endl;
+			return -1;
+		}
+
+		if(error != nullptr && !error->IsNull())
+			has_error = true;
+	}
+	else
+	{
+		result = GetObjectMember(jsonDoc, "params");
+		if(result == nullptr)
+		{
+			std::cout << "JSON parsing error" << std::endl;
+			return -1;
+		}
+	}
 
 	if(strcmp(method, "login") == 0)
 	{
-		//Handle login here
-		if(logged_in)
-		{
-			std::cout << "Invalid login reply" << std::endl;
-			return -1;
-		}
-		
-		if(has_error)
-		{
-			std::cout << "Login failed" << std::endl;
-			return -1;
-		}
-
-		std::cout << "Login OK" << std::endl;
-		logged_in = true;
-		cv_login.notify_all();
+ 		std::cout << "Login OK" << std::endl;
 		return msglen;
 	}
 
@@ -267,7 +257,7 @@ ssize_t node::json_proc_msg(char* msg, size_t msglen)
 
 	std::unique_lock<std::mutex> lck(call_mtx);
 	auto it = call_map.find(call_id);
-
+	
 	if(it != call_map.end())
 	{
 		response res;
