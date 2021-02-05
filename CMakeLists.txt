@@ -8,7 +8,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
-# find_package(OpenSSL 1.1 REQUIRED) not yet
+find_package(OpenSSL 1.1 REQUIRED)
 
 file(GLOB SRCFILES *.cpp)
 add_executable(epic_poold ${SRCFILES})
