@@ -30,6 +30,8 @@
 #include <unordered_map>
 #include <future>
 #include "json.h"
+#include "socks.h"
+#include "workstruct.hpp"
 
 class node
 {
@@ -49,16 +51,21 @@ public:
 		this->agent = agent;
 	}
 
-	inline void do_getblocktemplate()
+	inline void set_job_callback(on_new_job_callback cb)
 	{
-		response rsp;
-		make_node_call("getjobtemplate", "\"algorithm\":\"randomx\"", rsp);
-		//make_node_call("getblocktemplate", "", rsp);
+		on_new_job = cb;
+	}
+
+	void start()
+	{
+		recv_thd = std::thread(&node::thread_main, this);
 	}
 
 	void shutdown()
 	{
-		node_disconnect();
+		run_loop = false;
+		if(sock_fd != -1)
+			soft_shutdown(sock_fd);
 		recv_thd.join();
 	}
 
@@ -66,16 +73,10 @@ private:
 	node();
 
 	bool node_connect(const char* addr, const char* port);
+	ssize_t json_proc_msg(char* msg, size_t msglen);
+
+	void thread_main();
 	void recv_main();
-	void node_disconnect();
-	void persistent_connect();
-
-	struct response
-	{
-		bool error;
-	};
-
-	void make_node_call(const char* call, const char* data, response& rsp);
 
 	constexpr static size_t data_buffer_len = 16 * 1024;
 	constexpr static size_t json_buffer_len = 8 * 1024;
@@ -89,25 +90,17 @@ private:
 	MemoryPoolAllocator<> parseAlloc;
 	MemDocument jsonDoc;
 
-	ssize_t json_proc_msg(char* msg, size_t msglen);
-
 	std::string host;
 	std::string port;
 	std::string login;
 	std::string passw;
 	std::string agent;
 
-	void node_main();
-	std::thread node_thd;
 	std::thread recv_thd;
+	std::atomic<bool> run_loop;
 
-	std::mutex chk_mtx;
+	SOCKET sock_fd;
 
-	std::mutex call_mtx;
-	std::unordered_map<size_t, std::promise<response>> call_map;
-	std::atomic<size_t> g_call_id;
-
-	int sock_fd;
-	bool is_connected() { return sock_fd != -1; }
+	std::atomic<on_new_job_callback> on_new_job;
 };
 

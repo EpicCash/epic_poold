@@ -10,12 +10,13 @@
 #include <errno.h>
 #include <string.h>
 
+#include "encdec.h"
 #include "log.hpp"
 
 node::node() : domAlloc(json_dom_buf, json_buffer_len),
 	parseAlloc(json_parse_buf, json_buffer_len),
 	jsonDoc(&domAlloc, json_buffer_len, &parseAlloc),
-	g_call_id(1), sock_fd(-1)
+	run_loop(true), sock_fd(-1), on_new_job(nullptr)
 {
 }
 
@@ -54,18 +55,26 @@ bool node::node_connect(const char* addr, const char* port)
 	}
 
 	std::cout << "Connected!" << std::endl;
-	recv_thd = std::thread(&node::recv_main, this);
 	return true;
 }
 
-void node::node_disconnect()
+void node::thread_main()
 {
-	if(sock_fd != -1)
+	while(run_loop)
 	{
-		::shutdown(sock_fd, SHUT_RDWR);
+		if(!node_connect(host.c_str(), port.c_str()))
+		{
+			logger::inst().log_msg("Node connection error!");
+			sleep(5);
+			continue;
+		}
+
+		recv_main();
+
+		close(sock_fd);
+		sock_fd = -1;
 	}
 }
-
 void node::recv_main()
 {
 	int ret;
@@ -73,14 +82,10 @@ void node::recv_main()
 		"{\"login\":\"%s\",\"pass\":\"%s\",\"agent\":\"%s\"}}\n", login.c_str(), passw.c_str(), agent.c_str());
 
 	if(ret <=0 || send(sock_fd, send_buffer, ret, 0) != ret)
-	{
-		close(sock_fd);
-		sock_fd = -1;
 		return;
-	}
 
 	size_t datalen = 0;
-	while (true)
+	while(run_loop)
 	{
 		ret = recv(sock_fd, recv_buffer + datalen, data_buffer_len - datalen, 0);
 
@@ -97,91 +102,30 @@ void node::recv_main()
 		while ((retlen = json_proc_msg(msgstart, datalen)) != 0)
 		{
 			if(retlen < 0)
-				break;
+				return;
 
 			datalen -= retlen;
 			msgstart += retlen;
 		}
 
-		if(retlen < 0)
-			break;
-
 		//Got leftover data? Move it to the front
 		if (datalen > 0 && recv_buffer != msgstart)
 			memmove(recv_buffer, msgstart, datalen);
 	}
-
-	close(sock_fd);
-	sock_fd = -1;
 }
 
-void node::make_node_call(const char* call, const char* data, response& rsp)
+v32 IntArrayToVector(const Value& arr_v)
 {
-	bool first=true;
-	while(true)
+	v32 ret;
+	auto arr = GetArray(arr_v, 32);
+	for(size_t i=0; i < 32; i++)
 	{
-		if(!first)
-			std::this_thread::sleep_for(std::chrono::seconds(5));
-		first = false;
-
-		persistent_connect();
-		size_t my_call_id = g_call_id.fetch_add(1);
-		std::future<response> ready;
-
-		{
-			std::unique_lock<std::mutex> lck(call_mtx);
-			ready = call_map.emplace(std::piecewise_construct,
-				std::forward_as_tuple(my_call_id),
-				std::forward_as_tuple()).first->second.get_future();
-		}
-
-		int ret;
-		ret = snprintf(send_buffer, data_buffer_len, "{\"id\":\"%zu\",\"jsonrpc\":\"2.0\",\"method\":\"%s\", \"params\":"
-			"{%s}}\n", my_call_id, call, data);
-
-		std::cout << send_buffer << std::endl;
-		if(ret <=0 || send(sock_fd, send_buffer, ret, 0) != ret)
-		{
-			node_disconnect();
-			recv_thd.join();
-			continue;
-		}
-
-		auto res = ready.wait_for(std::chrono::seconds(5));
-		
-		{
-			std::unique_lock<std::mutex> lck(call_mtx);
-			call_map.erase(my_call_id);
-		}
-
-		if(res == std::future_status::timeout)
-		{
-			std::cout << "Call timed out!" << std::endl;
-			node_disconnect();
-			recv_thd.join();
-			continue;
-		}
-		
-		rsp = ready.get();
-		std::cout << "Call success" << std::endl;
-		return;
+		uint32_t v = GetUint(arr[i]);
+		if(v >= 256) /* Because using hex was too complicated... */
+			throw json_parse_error("Invalid Int Array");
+		ret.data[i] = uint8_t(v);
 	}
-}
-
-void node::persistent_connect()
-{
-	std::unique_lock<std::mutex> lck(chk_mtx);
-	bool first=true;
-	while(true)
-	{
-		std::cout << "Pers connect!" << std::endl;
-		if(!first)
-			std::this_thread::sleep_for(std::chrono::seconds(5));
-		first = false;
-
-		if(node_connect(host.c_str(), port.c_str()))
-			break;
-	}
+	return ret;
 }
 
 ssize_t node::json_proc_msg(char* msg, size_t msglen)
@@ -225,10 +169,7 @@ ssize_t node::json_proc_msg(char* msg, size_t msglen)
 		error = GetObjectMember(jsonDoc, "error");
 
 		if(result == nullptr && error == nullptr)
-		{
-			std::cout << "JSON parsing error" << std::endl;
-			return -1;
-		}
+			throw json_parse_error("call with no result or error");
 
 		if(error != nullptr && !error->IsNull())
 			has_error = true;
@@ -243,28 +184,110 @@ ssize_t node::json_proc_msg(char* msg, size_t msglen)
 		}
 	}
 
+	if(has_error)
+	{
+		const Value& error_msg = GetObjectMemberT(*error, "message");
+		const Value& error_cde = GetObjectMemberT(*error, "code");
+		logger::inst().log("RPC Error: ", error_msg.GetString(), " code: ", error_cde.GetInt());
+		return msglen;
+	}
+
 	if(strcmp(method, "login") == 0)
 	{
  		std::cout << "Login OK" << std::endl;
 		return msglen;
 	}
 
-	if(strcmp(method, "job") == 0)
+	if(strcmp(method, "job") == 0 || strcmp(method, "getjobtemplate") == 0)
 	{
-		std::cout << "Job packet recevied OK" << std::endl;
-		return msglen;
-	}
+		std::cout << "Job packet recevied OK " << std::endl;
+		const Value& res = *result;
+		uint32_t height = GetJsonUInt(res, "height");
 
-	std::unique_lock<std::mutex> lck(call_mtx);
-	auto it = call_map.find(call_id);
+		// Daemon does that sometimes (?)
+		if(height == 0)
+		{
+			logger::inst().log("Ignoring 0-height job.");
+			return msglen;
+		}
+
+		jobdata job;
+		job.rx_seed.set_all_zero();
+		job.rx_next_seed.set_all_zero();
+
+		const char* algo = GetJsonString(res, "algorithm");
+		if(strcmp(algo, "randomx") == 0)
+			job.type = pow_type::randomx;
+		else if(strcmp(algo, "progpow") == 0)
+			job.type = pow_type::progpow;
+		else if(strcmp(algo, "cuckoo") == 0)
+			job.type = pow_type::cuckoo;
+		else
+			throw json_parse_error(std::string("Unknown algorithm: ") + algo);
+
+		auto epochs = GetArray(GetObjectMemberT(res, "epochs"));
+		if(epochs.Size() != 1 && epochs.Size() != 2)
+			throw json_parse_error("Unexpected epochs size");
+
+		bool has_our_epoch = false;
+		for(const Value& epoch : epochs)
+		{
+			auto epoch_data = GetArray(epoch, 3);
+			uint32_t real_start = GetUint(epoch_data[0]);
+			uint32_t real_end = GetUint(epoch_data[1]);
+			if(real_end == 0 || real_end <= real_start)
+				throw json_parse_error("Epoch sanity check failed!");
+			real_end -= 1;
+
+			logger::inst().log("Epoch: real_start: ", real_start, " real_end: ", real_end, " height: ", height);
+			if(height >= real_start && height <= real_end)
+			{
+				has_our_epoch = true;
+				job.rx_seed = IntArrayToVector(epoch_data[2]);
+			}
+			else if(height < real_start)
+			{
+				job.rx_next_seed = IntArrayToVector(epoch_data[2]);
+			}
+			else
+				throw json_parse_error("Unidentfied epoch");
+		}
+
+		if(!has_our_epoch)
+			throw json_parse_error("We don't have our epoch");
 	
-	if(it != call_map.end())
-	{
-		response res;
-		res.error = has_error;
-		it->second.set_value(res);
+		job.height = height;
+		for(const Value& v : GetArray(GetObjectMemberT(res, "block_difficulty")))
+		{
+			auto a = GetArray(v, 2);
+			if(strcmp(GetString(a[0]), algo) == 0)
+				job.block_diff = GetUint64(a[1]);
+		}
+
+		unsigned prepow_len;
+		const char* prepow = GetJsonString(res, "pre_pow", prepow_len);
+
+		if(prepow_len/2 > sizeof(job.prepow))
+			throw json_parse_error(std::string("Too long prepow, size: ") + std::to_string(prepow_len/2));
+
+		if(!hex2bin(prepow, prepow_len, job.prepow))
+			throw json_parse_error("Hex-decode on prepow failed");
+		job.prepow_len = prepow_len / 2;
+
+		logger::inst().log("Got a job:", 
+			"\ntype: ", uint32_t(job.type),
+			"\nblock_diff: ", job.block_diff,
+			"\nheight: ", job.height,
+			"\nrx_seed: ", job.rx_seed,
+			"\nrx_next_seed: ", job.rx_next_seed);
+
+		on_new_job_callback cb = on_new_job.load();
+		if(cb != nullptr)
+			cb(job);
+
 		return msglen;
 	}
 
+	throw json_parse_error(std::string("Unkonwn method: ") + method);
 	return -1;
 }

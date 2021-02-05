@@ -2,6 +2,8 @@
 #include <mutex>
 #include <atomic>
 #include "itoa_ljust.h"
+#include "vector32.h"
+#include "encdec.h"
 
 class logger
 {
@@ -80,6 +82,13 @@ private:
 	{
 		char buf[32];
 		itoa_ljust::itoa(arg, buf);
+		print_element(buf);
+	}
+
+	inline void print_element(const v32& arg)
+	{
+		char buf[v32::size*2+1];
+		bin2hex(arg.data, v32::size, buf);
 		print_element(buf);
 	}
 
