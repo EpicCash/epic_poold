@@ -1,5 +1,6 @@
 #include "socks.h"
 #include "server.hpp"
+#include "jconf.hpp"
 #include <assert.h>
 #include <netinet/tcp.h>
 
@@ -11,8 +12,8 @@ SSL_CTX* g_ssl_ctx = nullptr;
 bool server::start()
 {
 	sockaddr_in6 my_addr;
-	uint16_t plain_port = 5000;
-	uint16_t tls_port = 5001;
+	uint16_t plain_port = jconf::inst().get_server_port();
+	uint16_t tls_port = jconf::inst().get_server_tls_port();
 	
 	if(plain_port == 0 && tls_port == 0)
 		return false;
@@ -26,7 +27,7 @@ bool server::start()
 		
 		int enable = 1;
 		if(setsockopt(plain_sck, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) < 0)
-			logger::inst().log_msg_short("setsockopt(SO_REUSEADDR) failed");
+			logger::inst().warn("setsockopt(SO_REUSEADDR) failed");
 		
 		my_addr = {0};
 		my_addr.sin6_family = AF_INET6;
@@ -49,7 +50,7 @@ bool server::start()
 		
 		int enable = 1;
 		if(setsockopt(tls_sck, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) < 0)
-			logger::inst().log_msg_short("setsockopt(SO_REUSEADDR) failed");
+			logger::inst().warn("setsockopt(SO_REUSEADDR) failed");
 		
 		my_addr = {0};
 		my_addr.sin6_family = AF_INET6;
@@ -81,8 +82,8 @@ void server::listen_main()
 	sockaddr_in6 cli_addr;
 	SOCKET cli_sck;
 	uint32_t errs = 0;
-	
-	logger::inst().log_msg_short("Main listening thread started.");
+
+	logger::inst().info("Main listening thread started.");
 	while(true)
 	{
 		cli_addr = {0};
@@ -91,8 +92,16 @@ void server::listen_main()
 		
 		if(cli_sck < 0)
 		{
-			if(errno == EMFILE)
-				while(sleep(1) != 0); //Sleep for a second
+			int err = errno;
+			if(err == EMFILE)
+			{
+				logger::inst().err("Max open files limit reached!");
+				while(sleep(1) == 0); // sleep for a second
+			}
+			else
+			{
+				logger::inst().err("Error in accept4: ", err);
+			}
 			errs++;
 			assert(errs < 5);
 			continue;
@@ -105,14 +114,14 @@ void server::listen_main()
 		int optval = 1;
 		if(setsockopt(cli_sck, SOL_SOCKET, SO_KEEPALIVE, &optval, sizeof(optval)) != 0)
 		{
-			logger::inst().log_msg("SO_KEEPALIVE on socket failed\n");
+			logger::inst().warn("SO_KEEPALIVE on socket failed");
 			sock_abort(cli_sck);
 			continue;
 		}
 		
 		if(setsockopt(cli_sck, IPPROTO_TCP, TCP_NODELAY, &optval, sizeof(optval)) != 0)
 		{
-			logger::inst().log_msg("TCP_NODELAY on socket failed\n");
+			logger::inst().warn("TCP_NODELAY on socket failed");
 			sock_abort(cli_sck);
 			continue;
 		}
@@ -125,7 +134,7 @@ void server::listen_main()
 		if(found_pool == nullptr)
 		{
 			pools.emplace_back();
-			logger::inst().log_msg("THMGT Client pool allocated. Size: %lu", pools.size());
+			logger::inst().info("THMGT Client pool allocated. Size: ", pools.size());
 			found_pool = &pools.back();
 		}
 		
@@ -143,7 +152,7 @@ void server::notify_new_block()
 		iterate_pools<client_pool_t>(client_pools, [&active_cli](client_pool_t& pool) { active_cli += pool.get_active(); pool.on_new_block(); return true; });
 		mlock.unlock();
 		
-		logger::inst().log_msg("THMGT Active clients %u in %lu pools", active_cli, client_pools.size());
+		logger::inst().info("THMGT Active clients ", active_cli, " in ", client_pools.size(), " pools");
 	}
 
 	active_cli = 0;
@@ -153,8 +162,8 @@ void server::notify_new_block()
 		iterate_pools<tls_client_pool_t>(tls_client_pools, [&active_cli](tls_client_pool_t& pool) { active_cli += pool.get_active(); pool.on_new_block(); return true; });
 		mlock_tls.unlock();
 		
-		logger::inst().log_msg("THMGT Active tls clients %u in %lu pools", active_cli, tls_client_pools.size());
+		logger::inst().info("THMGT Active clients ", active_cli, " in ", tls_client_pools.size(), " pools");
 	}
 
-	logger::inst().log_msg_short("Block refreshed!");
+	logger::inst().info("Block refreshed!");
 }

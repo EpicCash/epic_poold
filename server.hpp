@@ -83,7 +83,7 @@ private:
 			if(pool.is_finished())
 			{
 				it = pools.erase(it);
-				logger::inst().log_msg("THMGT Client pool deallocated. Size: %lu", pools.size());
+				logger::inst().dbghi("THMGT Client pool deallocated. Size: ", pools.size());
 				continue;
 			}
 			else

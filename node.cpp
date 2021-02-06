@@ -12,11 +12,14 @@
 
 #include "encdec.h"
 #include "log.hpp"
+#include "jconf.hpp"
+#include "time.hpp"
 
 node::node() : domAlloc(json_dom_buf, json_buffer_len),
 	parseAlloc(json_parse_buf, json_buffer_len),
 	jsonDoc(&domAlloc, json_buffer_len, &parseAlloc),
-	run_loop(true), sock_fd(-1), on_new_job(nullptr)
+	run_loop(true), sock_fd(-1), on_new_job(nullptr),
+	last_job_ts(0), logged_in(false)
 {
 }
 
@@ -30,7 +33,7 @@ bool node::node_connect(const char* addr, const char* port)
 	addrinfo *ptr;
 	if (getaddrinfo(addr, port, &hints, &ptr) != 0)
 	{
-		logger::inst().log("getaddrinfo failed");
+		logger::inst().err("Node getaddrinfo failed");
 		return false;
 	}
 
@@ -39,7 +42,7 @@ bool node::node_connect(const char* addr, const char* port)
 	if(sock_fd < 0)
 	{
 		sock_fd = -1;
-		logger::inst().log("socket failed");
+		logger::inst().err("Node socket failed");
 		return false;
 	}
 
@@ -50,11 +53,11 @@ bool node::node_connect(const char* addr, const char* port)
 	{
 		close(sock_fd);
 		sock_fd = -1;
-		logger::inst().log("connect failed");
+		logger::inst().err("Node connect failed");
 		return false;
 	}
 
-	std::cout << "Connected!" << std::endl;
+	logger::inst().info("Node connected!");
 	return true;
 }
 
@@ -62,9 +65,8 @@ void node::thread_main()
 {
 	while(run_loop)
 	{
-		if(!node_connect(host.c_str(), port.c_str()))
+		if(!node_connect(jconf::inst().get_node_hostname(), jconf::inst().get_node_port()))
 		{
-			logger::inst().log_msg("Node connection error!");
 			sleep(5);
 			continue;
 		}
@@ -79,15 +81,31 @@ void node::recv_main()
 {
 	int ret;
 	ret = snprintf(send_buffer, data_buffer_len, "{\"id\":\"0\",\"jsonrpc\":\"2.0\",\"method\":\"login\", \"params\":"
-		"{\"login\":\"%s\",\"pass\":\"%s\",\"agent\":\"%s\"}}\n", login.c_str(), passw.c_str(), agent.c_str());
+		"{\"login\":\"%s\",\"pass\":\"%s\",\"agent\":\"epic_poold\"}}\n", 
+		jconf::inst().get_node_username(), jconf::inst().get_node_password());
 
 	if(ret <=0 || send(sock_fd, send_buffer, ret, 0) != ret)
 		return;
+
+	struct timeval tv;
+	tv.tv_sec = 1;
+	tv.tv_usec = 0;
+	setsockopt(sock_fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv,sizeof(struct timeval));
 
 	size_t datalen = 0;
 	while(run_loop)
 	{
 		ret = recv(sock_fd, recv_buffer + datalen, data_buffer_len - datalen, 0);
+
+		if(ret == -1 && (errno == EAGAIN || errno == EINTR || errno == EWOULDBLOCK))
+		{
+			if(get_timestamp_ms()-last_job_ts > 60*1000)
+			{
+				send_template_request();
+				last_job_ts = get_timestamp_ms();
+			}
+			continue;
+		}
 
 		if(ret <= 0)
 			break;
@@ -128,6 +146,17 @@ v32 IntArrayToVector(const Value& arr_v)
 	return ret;
 }
 
+bool node::send_template_request()
+{
+	const char job_tmpl[] ="{\"id\":\"1\",\"jsonrpc\":\"2.0\",\"method\":\"getjobtemplate\",\"params\":{\"algorithm\":\"randomx\"}}";
+	if(send(sock_fd, job_tmpl, sizeof(job_tmpl)-1, 0) != sizeof(job_tmpl)-1)
+	{
+		logger::inst().err("Node: Send socket error.");
+		return false;
+	}
+	return true;
+}
+
 ssize_t node::json_proc_msg(char* msg, size_t msglen)
 {
 	size_t i;
@@ -149,10 +178,10 @@ ssize_t node::json_proc_msg(char* msg, size_t msglen)
 	domAlloc.Clear();
 	jsonDoc.SetNull();
 
-	std::cout << msg << std::endl;
+	logger::inst().dbglo("Node RPC recv: ", msg);
 	if(jsonDoc.ParseInsitu(msg).HasParseError() || !jsonDoc.IsObject())
 	{
-		std::cout << "JSON parsing error" << std::endl;
+		logger::inst().err("Node RPC Error: JSON parsing error");
 		return -1;
 	}
 
@@ -178,36 +207,33 @@ ssize_t node::json_proc_msg(char* msg, size_t msglen)
 	{
 		result = GetObjectMember(jsonDoc, "params");
 		if(result == nullptr)
-		{
-			std::cout << "JSON parsing error" << std::endl;
-			return -1;
-		}
+			throw json_parse_error("invoke with no params");
 	}
 
 	if(has_error)
 	{
 		const Value& error_msg = GetObjectMemberT(*error, "message");
 		const Value& error_cde = GetObjectMemberT(*error, "code");
-		logger::inst().log("RPC Error: ", error_msg.GetString(), " code: ", error_cde.GetInt());
+		logger::inst().err("Node RPC Error: ", error_msg.GetString(), " code: ", error_cde.GetInt());
 		return msglen;
 	}
 
 	if(strcmp(method, "login") == 0)
 	{
- 		std::cout << "Login OK" << std::endl;
+ 		logger::inst().dbghi("Node login OK");
+		send_template_request();
 		return msglen;
 	}
 
 	if(strcmp(method, "job") == 0 || strcmp(method, "getjobtemplate") == 0)
 	{
-		std::cout << "Job packet recevied OK " << std::endl;
 		const Value& res = *result;
 		uint32_t height = GetJsonUInt(res, "height");
 
 		// Daemon does that sometimes (?)
 		if(height == 0)
 		{
-			logger::inst().log("Ignoring 0-height job.");
+			logger::inst().info("Ignoring 0-height job.");
 			return msglen;
 		}
 
@@ -239,7 +265,7 @@ ssize_t node::json_proc_msg(char* msg, size_t msglen)
 				throw json_parse_error("Epoch sanity check failed!");
 			real_end -= 1;
 
-			logger::inst().log("Epoch: real_start: ", real_start, " real_end: ", real_end, " height: ", height);
+			logger::inst().dbghi("Epoch: real_start: ", real_start, " real_end: ", real_end, " height: ", height);
 			if(height >= real_start && height <= real_end)
 			{
 				has_our_epoch = true;
@@ -274,13 +300,14 @@ ssize_t node::json_proc_msg(char* msg, size_t msglen)
 			throw json_parse_error("Hex-decode on prepow failed");
 		job.prepow_len = prepow_len / 2;
 
-		logger::inst().log("Got a job:", 
+		logger::inst().dbglo("Got a job:", 
 			"\ntype: ", uint32_t(job.type),
 			"\nblock_diff: ", job.block_diff,
 			"\nheight: ", job.height,
 			"\nrx_seed: ", job.rx_seed,
 			"\nrx_next_seed: ", job.rx_next_seed);
 
+		last_job_ts = get_timestamp_ms();
 		on_new_job_callback cb = on_new_job.load();
 		if(cb != nullptr)
 			cb(job);

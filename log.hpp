@@ -4,6 +4,7 @@
 #include "itoa_ljust.h"
 #include "vector32.h"
 #include "encdec.h"
+#include "loglevels.hpp"
 
 class logger
 {
@@ -15,17 +16,48 @@ public:
 	};
 
 	bool is_running() { return hFile != nullptr; }
-	void log_msg(const char* fmt, ...);
-	void log_msg_short(const char* msg);
-	void log_msg_long(const char* long_msg, const char* fmt, ...);
-	
+
 	template<typename... Args>
-	inline void log(Args... args)
+	inline void err(Args... args)
+	{
+		log(log_level::error, get_default_colour(log_level::error), args...);
+	}
+
+	template<typename... Args>
+	inline void warn(Args... args)
+	{
+		log(log_level::warn, get_default_colour(log_level::warn), args...);
+	}
+
+	template<typename... Args>
+	inline void info(Args... args)
+	{
+		log(log_level::info, get_default_colour(log_level::info), args...);
+	}
+
+	template<typename... Args>
+	inline void dbghi(Args... args)
+	{
+		log(log_level::debug_hi, get_default_colour(log_level::debug_hi), args...);
+	}
+
+	template<typename... Args>
+	inline void dbglo(Args... args)
+	{
+		log(log_level::debug_lo, get_default_colour(log_level::debug_lo), args...);
+	}
+
+	template<typename... Args>
+	inline void log(log_level lvl, out_colours clr, Args... args)
 	{
 		std::lock_guard<std::mutex> lck(log_lock);
+		if(lvl < current_level)
+			return;
 		check_sighup();
+		set_colour(clr);
 		print_timestamp();
 		print_all(args...);
+		reset_colour();
 	}
 
 	void on_sighup()
@@ -98,13 +130,19 @@ private:
 			reopen_file();
 	}
 
+	inline void reset_colour()
+	{
+		if(hFile == stdout)
+			fputs("\x1B[0m", stdout);
+	}
+
 	logger();
 	void reopen_file();
 	void print_timestamp();
-	static logger* pInst;
+	void set_colour(out_colours cl);
 
 	FILE* hFile;
+	log_level current_level;
 	std::mutex log_lock;
-	std::mutex print_lock;
 	std::atomic<bool> sighup;
 };

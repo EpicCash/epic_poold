@@ -1,10 +1,15 @@
 #include <iostream>
 #include "node.h"
-#include <unistd.h>
-#include "itoa_ljust.h"
+#include "jconf.hpp"
 
-int main(int argc, char **argv) {
-	node::inst().set_login_data("127.0.0.1", "3416", "", "", "pool");
+int main(int argc, char **argv)
+{
+	const char* conf_filename = "config.json";
+	if(argc >= 2)
+		conf_filename = argv[1];
+	if(!jconf::inst().parse_config(conf_filename))
+		return 1;
+
 	node::inst().start();
 	sleep(600);
 	node::inst().shutdown();

@@ -1,4 +1,5 @@
 #include "log.hpp"
+#include "jconf.hpp"
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
@@ -6,35 +7,11 @@
 
 logger::logger() : sighup(false)
 {
-	const char* log_file = nullptr;
+	const char* log_file = jconf::inst().get_log_file();
 	if(log_file != nullptr && log_file[0] != '\0')
 		hFile = fopen(log_file, "ab");
 	else
 		hFile = stdout;
-}
-
-void logger::log_msg(const char* fmt, ...)
-{
-	std::lock_guard<std::mutex> lck(log_lock);
-	char buf[1024] = {0};
-	size_t bpos;
-	tm stime;
-
-	check_sighup();
-
-	time_t now = time(nullptr);
-	localtime_r(&now, &stime);
-	strftime(buf, sizeof(buf), "[%F %T]: ", &stime);
-	bpos = strlen(buf);
-
-	va_list args;
-	va_start(args, fmt);
-	vsnprintf(buf + bpos, sizeof(buf) - bpos, fmt, args);
-	va_end(args);
-
-	fputs(buf, hFile);
-	fputc('\n', hFile);
-	fflush(hFile);
 }
 
 void logger::print_timestamp()
@@ -47,52 +24,53 @@ void logger::print_timestamp()
 	fputs(buf, hFile);
 }
 
-void logger::log_msg_short(const char* msg)
-{
-	std::lock_guard<std::mutex> lck(log_lock);
-	char buf[256] = {0};
-	tm stime;
-
-	check_sighup();
-
-	time_t now = time(nullptr);
-	localtime_r(&now, &stime);
-	strftime(buf, sizeof(buf), "[%F %T]: ", &stime);
-
-	fputs(buf, hFile);
-	fputs(msg, hFile);
-	fputc('\n', hFile);
-	fflush(hFile);
-}
-
-void logger::log_msg_long(const char* long_msg, const char* fmt, ...)
-{
-	std::lock_guard<std::mutex> lck(log_lock);
-	char buf[1024] = {0};
-	size_t bpos;
-	tm stime;
-
-	check_sighup();
-
-	time_t now = time(nullptr);
-	localtime_r(&now, &stime);
-	strftime(buf, sizeof(buf), "[%F %T]: ", &stime);
-	bpos = strlen(buf);
-
-	va_list args;
-	va_start(args, fmt);
-	vsnprintf(buf + bpos, sizeof(buf) - bpos, fmt, args);
-	va_end(args);
-
-	fputs(buf, hFile);
-	fputs(long_msg, hFile);
-	fputc('\n', hFile);
-	fflush(hFile);
-}
-
 void logger::reopen_file()
 {
 	sighup = false;
-	fputs("I caught SIGHUP but the output is going to console!\n", hFile);
-	fflush(hFile);
+	if(jconf::inst().daemonize())
+	{
+		fclose(hFile);
+		hFile = fopen(jconf::inst().get_log_file(), "ab");
+	}
+	else
+	{
+		fputs("I caught SIGHUP but the output is going to console!\n", hFile);
+		fflush(hFile);
+	}
+}
+
+void logger::set_colour(out_colours cl)
+{
+	if(hFile != stdout)
+		return;
+
+	switch(cl)
+	{
+	case out_colours::K_RED:
+		fputs("\x1B[1;31m", stdout);
+		break;
+	case out_colours::K_GREEN:
+		fputs("\x1B[1;32m", stdout);
+		break;
+	case out_colours::K_BLUE:
+		fputs("\x1B[1;34m", stdout);
+		break;
+	case out_colours::K_YELLOW:
+		fputs("\x1B[1;33m", stdout);
+		break;
+	case out_colours::K_CYAN:
+		fputs("\x1B[1;36m", stdout);
+		break;
+	case out_colours::K_MAGENTA:
+		fputs("\x1B[1;35m", stdout);
+		break;
+	case out_colours::K_WHITE:
+		fputs("\x1B[1;37m", stdout);
+		break;
+	case out_colours::K_NONE:
+		fputs("\x1B[0m", stdout);
+		break;
+	default:
+		break;
+	}
 }

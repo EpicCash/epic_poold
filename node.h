@@ -42,15 +42,6 @@ public:
 		return inst;
 	}
 
-	inline void set_login_data(const char* host, const char* port, const char* username, const char* password, const char* agent)
-	{
-		this->host = host;
-		this->port = port;
-		login = username;
-		passw = password;
-		this->agent = agent;
-	}
-
 	inline void set_job_callback(on_new_job_callback cb)
 	{
 		on_new_job = cb;
@@ -77,6 +68,7 @@ private:
 
 	void thread_main();
 	void recv_main();
+	bool send_template_request();
 
 	constexpr static size_t data_buffer_len = 16 * 1024;
 	constexpr static size_t json_buffer_len = 8 * 1024;
@@ -90,17 +82,13 @@ private:
 	MemoryPoolAllocator<> parseAlloc;
 	MemDocument jsonDoc;
 
-	std::string host;
-	std::string port;
-	std::string login;
-	std::string passw;
-	std::string agent;
-
 	std::thread recv_thd;
 	std::atomic<bool> run_loop;
 
 	SOCKET sock_fd;
 
 	std::atomic<on_new_job_callback> on_new_job;
+	uint64_t last_job_ts;
+	bool logged_in;
 };
 
