@@ -185,136 +185,142 @@ ssize_t node::json_proc_msg(char* msg, size_t msglen)
 		return -1;
 	}
 
-	lpcJsVal result, error = nullptr;
-	//todo: needs to be caught
-
-	ssize_t call_id = GetJsonCallId(jsonDoc);
-	const char* method = GetJsonString(jsonDoc, "method");
-	bool has_error = false;
-
-	if(call_id != -1)
+	try
 	{
-		result = GetObjectMember(jsonDoc, "result");
-		error = GetObjectMember(jsonDoc, "error");
+		lpcJsVal result, error = nullptr;
+		ssize_t call_id = GetJsonCallId(jsonDoc);
+		const char* method = GetJsonString(jsonDoc, "method");
+		bool has_error = false;
 
-		if(result == nullptr && error == nullptr)
-			throw json_parse_error("call with no result or error");
-
-		if(error != nullptr && !error->IsNull())
-			has_error = true;
-	}
-	else
-	{
-		result = GetObjectMember(jsonDoc, "params");
-		if(result == nullptr)
-			throw json_parse_error("invoke with no params");
-	}
-
-	if(has_error)
-	{
-		const Value& error_msg = GetObjectMemberT(*error, "message");
-		const Value& error_cde = GetObjectMemberT(*error, "code");
-		logger::inst().err("Node RPC Error: ", error_msg.GetString(), " code: ", error_cde.GetInt());
-		return msglen;
-	}
-
-	if(strcmp(method, "login") == 0)
-	{
- 		logger::inst().dbghi("Node login OK");
-		send_template_request();
-		return msglen;
-	}
-
-	if(strcmp(method, "job") == 0 || strcmp(method, "getjobtemplate") == 0)
-	{
-		const Value& res = *result;
-		uint32_t height = GetJsonUInt(res, "height");
-
-		// Daemon does that sometimes (?)
-		if(height == 0)
+		if(call_id != -1)
 		{
-			logger::inst().info("Ignoring 0-height job.");
+			result = GetObjectMember(jsonDoc, "result");
+			error = GetObjectMember(jsonDoc, "error");
+
+			if(result == nullptr && error == nullptr)
+				throw json_parse_error("call with no result or error");
+
+			if(error != nullptr && !error->IsNull())
+				has_error = true;
+		}
+		else
+		{
+			result = GetObjectMember(jsonDoc, "params");
+			if(result == nullptr)
+				throw json_parse_error("invoke with no params");
+		}
+
+		if(has_error)
+		{
+			const Value& error_msg = GetObjectMemberT(*error, "message");
+			const Value& error_cde = GetObjectMemberT(*error, "code");
+			logger::inst().err("Node RPC Error: ", error_msg.GetString(), " code: ", error_cde.GetInt());
 			return msglen;
 		}
 
-		jobdata job;
-		job.rx_seed.set_all_zero();
-		job.rx_next_seed.set_all_zero();
-
-		const char* algo = GetJsonString(res, "algorithm");
-		if(strcmp(algo, "randomx") == 0)
-			job.type = pow_type::randomx;
-		else if(strcmp(algo, "progpow") == 0)
-			job.type = pow_type::progpow;
-		else if(strcmp(algo, "cuckoo") == 0)
-			job.type = pow_type::cuckoo;
-		else
-			throw json_parse_error(std::string("Unknown algorithm: ") + algo);
-
-		auto epochs = GetArray(GetObjectMemberT(res, "epochs"));
-		if(epochs.Size() != 1 && epochs.Size() != 2)
-			throw json_parse_error("Unexpected epochs size");
-
-		bool has_our_epoch = false;
-		for(const Value& epoch : epochs)
+		if(strcmp(method, "login") == 0)
 		{
-			auto epoch_data = GetArray(epoch, 3);
-			uint32_t real_start = GetUint(epoch_data[0]);
-			uint32_t real_end = GetUint(epoch_data[1]);
-			if(real_end == 0 || real_end <= real_start)
-				throw json_parse_error("Epoch sanity check failed!");
-			real_end -= 1;
+			logger::inst().dbghi("Node login OK");
+			send_template_request();
+			return msglen;
+		}
 
-			logger::inst().dbghi("Epoch: real_start: ", real_start, " real_end: ", real_end, " height: ", height);
-			if(height >= real_start && height <= real_end)
+		if(strcmp(method, "job") == 0 || strcmp(method, "getjobtemplate") == 0)
+		{
+			const Value& res = *result;
+			uint32_t height = GetJsonUInt(res, "height");
+
+			// Daemon does that sometimes (?)
+			if(height == 0)
 			{
-				has_our_epoch = true;
-				job.rx_seed = IntArrayToVector(epoch_data[2]);
+				logger::inst().info("Ignoring 0-height job.");
+				return msglen;
 			}
-			else if(height < real_start)
-			{
-				job.rx_next_seed = IntArrayToVector(epoch_data[2]);
-			}
+
+			jobdata job;
+			job.rx_seed.set_all_zero();
+			job.rx_next_seed.set_all_zero();
+
+			const char* algo = GetJsonString(res, "algorithm");
+			if(strcmp(algo, "randomx") == 0)
+				job.type = pow_type::randomx;
+			else if(strcmp(algo, "progpow") == 0)
+				job.type = pow_type::progpow;
+			else if(strcmp(algo, "cuckoo") == 0)
+				job.type = pow_type::cuckoo;
 			else
-				throw json_parse_error("Unidentfied epoch");
+				throw json_parse_error(std::string("Unknown algorithm: ") + algo);
+
+			auto epochs = GetArray(GetObjectMemberT(res, "epochs"));
+			if(epochs.Size() != 1 && epochs.Size() != 2)
+				throw json_parse_error("Unexpected epochs size");
+
+			bool has_our_epoch = false;
+			for(const Value& epoch : epochs)
+			{
+				auto epoch_data = GetArray(epoch, 3);
+				uint32_t real_start = GetUint(epoch_data[0]);
+				uint32_t real_end = GetUint(epoch_data[1]);
+				if(real_end == 0 || real_end <= real_start)
+					throw json_parse_error("Epoch sanity check failed!");
+				real_end -= 1;
+
+				logger::inst().dbghi("Epoch: real_start: ", real_start, " real_end: ", real_end, " height: ", height);
+				if(height >= real_start && height <= real_end)
+				{
+					has_our_epoch = true;
+					job.rx_seed = IntArrayToVector(epoch_data[2]);
+				}
+				else if(height < real_start)
+				{
+					job.rx_next_seed = IntArrayToVector(epoch_data[2]);
+				}
+				else
+					throw json_parse_error("Unidentfied epoch");
+			}
+
+			if(!has_our_epoch)
+				throw json_parse_error("We don't have our epoch");
+		
+			job.height = height;
+			for(const Value& v : GetArray(GetObjectMemberT(res, "block_difficulty")))
+			{
+				auto a = GetArray(v, 2);
+				if(strcmp(GetString(a[0]), algo) == 0)
+					job.block_diff = GetUint64(a[1]);
+			}
+
+			unsigned prepow_len;
+			const char* prepow = GetJsonString(res, "pre_pow", prepow_len);
+
+			if(prepow_len/2 > sizeof(job.prepow))
+				throw json_parse_error(std::string("Too long prepow, size: ") + std::to_string(prepow_len/2));
+
+			if(!hex2bin(prepow, prepow_len, job.prepow))
+				throw json_parse_error("Hex-decode on prepow failed");
+			job.prepow_len = prepow_len / 2;
+
+			logger::inst().dbglo("Got a job:", 
+				"\ntype: ", uint32_t(job.type),
+				"\nblock_diff: ", job.block_diff,
+				"\nheight: ", job.height,
+				"\nrx_seed: ", job.rx_seed,
+				"\nrx_next_seed: ", job.rx_next_seed);
+
+			last_job_ts = get_timestamp_ms();
+			on_new_job_callback cb = on_new_job.load();
+			if(cb != nullptr)
+				cb(job);
+
+			return msglen;
 		}
 
-		if(!has_our_epoch)
-			throw json_parse_error("We don't have our epoch");
-	
-		job.height = height;
-		for(const Value& v : GetArray(GetObjectMemberT(res, "block_difficulty")))
-		{
-			auto a = GetArray(v, 2);
-			if(strcmp(GetString(a[0]), algo) == 0)
-				job.block_diff = GetUint64(a[1]);
-		}
-
-		unsigned prepow_len;
-		const char* prepow = GetJsonString(res, "pre_pow", prepow_len);
-
-		if(prepow_len/2 > sizeof(job.prepow))
-			throw json_parse_error(std::string("Too long prepow, size: ") + std::to_string(prepow_len/2));
-
-		if(!hex2bin(prepow, prepow_len, job.prepow))
-			throw json_parse_error("Hex-decode on prepow failed");
-		job.prepow_len = prepow_len / 2;
-
-		logger::inst().dbglo("Got a job:", 
-			"\ntype: ", uint32_t(job.type),
-			"\nblock_diff: ", job.block_diff,
-			"\nheight: ", job.height,
-			"\nrx_seed: ", job.rx_seed,
-			"\nrx_next_seed: ", job.rx_next_seed);
-
-		last_job_ts = get_timestamp_ms();
-		on_new_job_callback cb = on_new_job.load();
-		if(cb != nullptr)
-			cb(job);
-
-		return msglen;
+		throw json_parse_error(std::string("Unkonwn method: ") + method);
+	}
+	catch(const json_parse_error& exc)
+	{
+		logger::inst().err("Node error: ", exc.what());
 	}
 
-	throw json_parse_error(std::string("Unkonwn method: ") + method);
 	return -1;
 }

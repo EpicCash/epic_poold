@@ -1,6 +1,7 @@
 #include <iostream>
 #include "node.h"
 #include "jconf.hpp"
+#include "hashpool.hpp"
 
 int main(int argc, char **argv)
 {
