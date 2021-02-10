@@ -29,6 +29,7 @@
 #include <thread>
 #include <unordered_map>
 #include <future>
+#include <list>
 #include "json.h"
 #include "socks.h"
 #include "workstruct.hpp"
@@ -42,9 +43,14 @@ public:
 		return inst;
 	}
 
-	inline void set_job_callback(on_new_job_callback cb)
+	inline bool has_first_job()
 	{
-		on_new_job = cb;
+		return current_job != nullptr;
+	}
+
+	jobdata get_current_job()
+	{
+		return *current_job;
 	}
 
 	void start()
@@ -87,7 +93,9 @@ private:
 
 	SOCKET sock_fd;
 
-	std::atomic<on_new_job_callback> on_new_job;
+	std::list<jobdata> jobs;
+	std::atomic<const jobdata*> current_job;
+
 	uint64_t last_job_ts;
 	bool logged_in;
 };

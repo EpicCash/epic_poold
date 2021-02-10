@@ -5,36 +5,8 @@
 
 #include "socks.h"
 #include "log.hpp"
-
-struct dummy_client_pool
-{
-	void add_socket(SOCKET fd, in6_addr& ip, in_port_t port)
-	{
-	}
-
-	bool is_full()
-	{
-		return false;
-	}
-
-	void on_new_block()
-	{
-	}
-
-	uint32_t get_active()
-	{
-		return 0;
-	}
-
-	bool is_finished()
-	{
-		return false;
-	}
-};
-
-struct dummy_tls_client_pool : public dummy_client_pool
-{
-};
+#include "client_pool.hpp"
+#include "client.hpp"
 
 class server
 {
@@ -54,8 +26,8 @@ private:
 	template <typename pool_t>
 	void listen_main();
 
-	using client_pool_t = dummy_client_pool;
-	using tls_client_pool_t = dummy_tls_client_pool;
+	using client_pool_t = client_pool<client, 256>;
+	using tls_client_pool_t = client_pool<client, 254>;
 
 	template <typename T>
 	inline std::list<T>& select_pool();

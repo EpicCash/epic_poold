@@ -18,7 +18,7 @@
 node::node() : domAlloc(json_dom_buf, json_buffer_len),
 	parseAlloc(json_parse_buf, json_buffer_len),
 	jsonDoc(&domAlloc, json_buffer_len, &parseAlloc),
-	run_loop(true), sock_fd(-1), on_new_job(nullptr),
+	run_loop(true), sock_fd(-1), current_job(nullptr),
 	last_job_ts(0), logged_in(false)
 {
 }
@@ -237,17 +237,18 @@ ssize_t node::json_proc_msg(char* msg, size_t msglen)
 				return msglen;
 			}
 
-			jobdata job;
-			job.rx_seed.set_all_zero();
-			job.rx_next_seed.set_all_zero();
+			jobs.emplace_back();
+			jobdata* job = &jobs.back();
+			job->rx_seed.set_all_zero();
+			job->rx_next_seed.set_all_zero();
 
 			const char* algo = GetJsonString(res, "algorithm");
 			if(strcmp(algo, "randomx") == 0)
-				job.type = pow_type::randomx;
+				job->type = pow_type::randomx;
 			else if(strcmp(algo, "progpow") == 0)
-				job.type = pow_type::progpow;
+				job->type = pow_type::progpow;
 			else if(strcmp(algo, "cuckoo") == 0)
-				job.type = pow_type::cuckoo;
+				job->type = pow_type::cuckoo;
 			else
 				throw json_parse_error(std::string("Unknown algorithm: ") + algo);
 
@@ -269,11 +270,11 @@ ssize_t node::json_proc_msg(char* msg, size_t msglen)
 				if(height >= real_start && height <= real_end)
 				{
 					has_our_epoch = true;
-					job.rx_seed = IntArrayToVector(epoch_data[2]);
+					job->rx_seed = IntArrayToVector(epoch_data[2]);
 				}
 				else if(height < real_start)
 				{
-					job.rx_next_seed = IntArrayToVector(epoch_data[2]);
+					job->rx_next_seed = IntArrayToVector(epoch_data[2]);
 				}
 				else
 					throw json_parse_error("Unidentfied epoch");
@@ -282,36 +283,34 @@ ssize_t node::json_proc_msg(char* msg, size_t msglen)
 			if(!has_our_epoch)
 				throw json_parse_error("We don't have our epoch");
 		
-			job.height = height;
+			job->height = height;
 			for(const Value& v : GetArray(GetObjectMemberT(res, "block_difficulty")))
 			{
 				auto a = GetArray(v, 2);
 				if(strcmp(GetString(a[0]), algo) == 0)
-					job.block_diff = GetUint64(a[1]);
+					job->block_diff = GetUint64(a[1]);
 			}
 
 			unsigned prepow_len;
 			const char* prepow = GetJsonString(res, "pre_pow", prepow_len);
 
-			if(prepow_len/2 > sizeof(job.prepow))
+			if(prepow_len/2 > sizeof(job->prepow))
 				throw json_parse_error(std::string("Too long prepow, size: ") + std::to_string(prepow_len/2));
 
-			if(!hex2bin(prepow, prepow_len, job.prepow))
+			if(!hex2bin(prepow, prepow_len, job->prepow))
 				throw json_parse_error("Hex-decode on prepow failed");
-			job.prepow_len = prepow_len / 2;
+			job->prepow_len = prepow_len / 2;
 
 			logger::inst().dbglo("Got a job:", 
-				"\ntype: ", uint32_t(job.type),
-				"\nblock_diff: ", job.block_diff,
-				"\nheight: ", job.height,
-				"\nrx_seed: ", job.rx_seed,
-				"\nrx_next_seed: ", job.rx_next_seed);
+				"\ntype: ", uint32_t(job->type),
+				"\nblock_diff: ", job->block_diff,
+				"\nheight: ", job->height,
+				"\nrx_seed: ", job->rx_seed,
+				"\nrx_next_seed: ", job->rx_next_seed);
 
 			last_job_ts = get_timestamp_ms();
-			on_new_job_callback cb = on_new_job.load();
-			if(cb != nullptr)
-				cb(job);
 
+			current_job = job;
 			return msglen;
 		}
 
