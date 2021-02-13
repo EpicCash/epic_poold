@@ -14,6 +14,8 @@
 #include "log.hpp"
 #include "jconf.hpp"
 #include "time.hpp"
+#include "server.hpp"
+#include "hashpool.hpp"
 
 node::node() : domAlloc(json_dom_buf, json_buffer_len),
 	parseAlloc(json_parse_buf, json_buffer_len),
@@ -271,10 +273,14 @@ ssize_t node::json_proc_msg(char* msg, size_t msglen)
 				{
 					has_our_epoch = true;
 					job->rx_seed = IntArrayToVector(epoch_data[2]);
+					if(!hashpool::inst().has_dataset(job->rx_seed.get_id()))
+						hashpool::inst().calculate_dataset(job->rx_seed);
 				}
 				else if(height < real_start)
 				{
 					job->rx_next_seed = IntArrayToVector(epoch_data[2]);
+					if(!hashpool::inst().has_dataset(job->rx_next_seed.get_id()))
+						hashpool::inst().calculate_dataset(job->rx_next_seed);
 				}
 				else
 					throw json_parse_error("Unidentfied epoch");
@@ -294,12 +300,15 @@ ssize_t node::json_proc_msg(char* msg, size_t msglen)
 			unsigned prepow_len;
 			const char* prepow = GetJsonString(res, "pre_pow", prepow_len);
 
-			if(prepow_len/2 > sizeof(job->prepow))
+			if(prepow_len/2 > sizeof(job->prepow) - sizeof(uint64_t))
 				throw json_parse_error(std::string("Too long prepow, size: ") + std::to_string(prepow_len/2));
 
 			if(!hex2bin(prepow, prepow_len, job->prepow))
 				throw json_parse_error("Hex-decode on prepow failed");
 			job->prepow_len = prepow_len / 2;
+
+			memset(job->prepow + job->prepow_len, 0, sizeof(uint64_t));
+			job->prepow_len += sizeof(uint64_t);
 
 			logger::inst().dbglo("Got a job:", 
 				"\ntype: ", uint32_t(job->type),
@@ -309,8 +318,12 @@ ssize_t node::json_proc_msg(char* msg, size_t msglen)
 				"\nrx_next_seed: ", job->rx_next_seed);
 
 			last_job_ts = get_timestamp_ms();
-
 			current_job = job;
+			server::inst().notify_new_block();
+
+			if(jobs.size() > 5)
+				jobs.pop_front();
+
 			return msglen;
 		}
 

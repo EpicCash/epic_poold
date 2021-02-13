@@ -1,5 +1,6 @@
 #include <iostream>
 #include "node.h"
+#include "server.hpp"
 #include "jconf.hpp"
 #include "hashpool.hpp"
 
@@ -12,7 +13,10 @@ int main(int argc, char **argv)
 		return 1;
 
 	node::inst().start();
-	sleep(600);
+	server::inst().start();
+
+	while(true)
+		sleep(600);
 	node::inst().shutdown();
 	return 0;
 }

@@ -26,7 +26,7 @@ void hashpool::hash_thd_main()
 	while(true)
 	{
 		check_job* job = jobs.pop();
-		
+
 		size_t dsidx;
 		for(dsidx = 0; dsidx < ds.size(); dsidx++)
 		{
@@ -36,6 +36,7 @@ void hashpool::hash_thd_main()
 
 		if(dsidx == ds.size())
 		{
+			logger::inst().warn("Precalculated dataset for a job was not found! We lost a share!");
 			job->hash.set_all_ones();
 			job->error = true;
 			job->ready.set_value();
@@ -45,6 +46,7 @@ void hashpool::hash_thd_main()
 		std::shared_lock<std::shared_timed_mutex> lk(ds[dsidx].mtx);
 		if(ds[dsidx].seed_id != job->dataset_id)
 		{
+			logger::inst().warn("Precalculated dataset was swapped out before we locked. We lost a share!");
 			job->hash.set_all_ones();
 			job->error = true;
 			job->ready.set_value();
@@ -54,6 +56,12 @@ void hashpool::hash_thd_main()
 		dataset& mds = ds[dsidx];
 		randomx_vm_set_dataset(v, mds.ds);
 		randomx_calculate_hash(v, job->data, job->data_len, static_cast<uint8_t*>(job->hash));
+
+		logger::inst().dbglo("Dataset id: ", mds.seed_id.load(), "\nhash: ", job->hash);
+
+		char blob[1024];
+		bin2hex((uint8_t*)job->data, job->data_len, blob);
+		logger::inst().dbglo("blob len: ", job->data_len, " blob: ", blob);
 
 		job->error = false;
 		job->ready.set_value();

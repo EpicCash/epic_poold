@@ -14,7 +14,16 @@ bool server::start()
 	sockaddr_in6 my_addr;
 	uint16_t plain_port = jconf::inst().get_server_port();
 	uint16_t tls_port = jconf::inst().get_server_tls_port();
-	
+
+	client::set_limits();
+
+	while(!node::inst().has_first_job())
+	{
+		logger::inst().info("Waiting for a job...");
+		int slp = 10;
+		while((slp = sleep(slp)) != 0);
+	}
+
 	if(plain_port == 0 && tls_port == 0)
 		return false;
 

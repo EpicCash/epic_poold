@@ -22,6 +22,8 @@ size_t client::start_window = 0;
 size_t client::template_timeout = 0;
 size_t client::client_timeouts[3] = {0};
 
+std::atomic<uint32_t> g_extra_nonce_ctr(0);
+
 client::client(SOCKET fd, const in6_addr& ip_addr, in_port_t port) : 
 	fd(fd), active_time(get_timestamp()), domAlloc(json_dom_buf, json_buf_size), 
 	parseAlloc(json_parse_buf, json_buf_size), jsonDoc(&domAlloc, json_buf_size, &parseAlloc)
@@ -33,6 +35,8 @@ client::client(SOCKET fd, const in6_addr& ip_addr, in_port_t port) :
 		throw std::runtime_error("inet_ntop failed!");
 	
 	snprintf(ip_addr_str, sizeof(ip_addr_str), "[%s]:%u", str, ntohs(port));
+
+	extra_nonce = g_extra_nonce_ctr.fetch_add(1);
 }
 
 bool client::on_socket_read()
@@ -160,6 +164,8 @@ void client::process_method_login(int64_t call_id, const Value& args)
 	char hex_target[9];
 	char hex_blob[768];
 
+	memcpy(cur_job.prepow + cur_job.prepow_len - sizeof(uint32_t)*2, &extra_nonce, sizeof(uint32_t));
+
 	bin2hex(cur_job.prepow, cur_job.prepow_len, hex_blob);
 	bin2hex((const unsigned char*)&jobid, sizeof(uint32_t), hex_jobid);
  	uint32_t t = diff_to_target(fix_diff);
@@ -217,17 +223,23 @@ void client::process_method_submit(int64_t call_id, const Value& args)
 		return;
 	}
 
-	memcpy(cur_job.prepow + cur_job.prepow_len, &nonce, sizeof(uint32_t));
-	
+	memcpy(cur_job.prepow + cur_job.prepow_len - sizeof(uint32_t), &nonce, sizeof(uint32_t));
+
 	std::future<void> future;
 	hashpool::check_job job;
 	job.data = cur_job.prepow;
-	job.data_len = cur_job.prepow_len + sizeof(uint32_t);
+	job.data_len = cur_job.prepow_len;
 	job.dataset_id = cur_job.rx_seed.get_id();
 	future = job.ready.get_future();
 	
 	hashpool::inst().push_job(job);
 	future.wait();
+
+	if(job.error)
+	{
+		send_error_response(call_id, "Server error while checking share.");
+		return;
+	}
 
 	uint32_t target = 0xFFFFFFFFU / fix_diff;
 	if(job.hash.get_work32() > target)
@@ -264,6 +276,8 @@ bool client::on_new_block(int64_t timestamp_ms)
 
 	if(!logged_in)
 		return true;
+
+	memcpy(cur_job.prepow + cur_job.prepow_len - sizeof(uint32_t)*2, &extra_nonce, sizeof(uint32_t));
 
 	char hex_jobid[9];
 	char hex_target[9];

@@ -153,6 +153,8 @@ protected:
 	jobdata cur_job;
 	uint32_t jobid = 0;
 
+	uint32_t extra_nonce;
+
 	static constexpr size_t json_buf_size = 4096;
 	uint8_t json_dom_buf[json_buf_size];
 	uint8_t json_parse_buf[json_buf_size];
