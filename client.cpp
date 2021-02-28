@@ -250,9 +250,11 @@ void client::process_method_submit(int64_t call_id, const Value& args)
 
 	uint64_t actual_diff = work_to_diff(job.hash.get_work64());
 	
-	if(actual_diff > cur_job.block_diff)
+	if(actual_diff > 4096)//cur_job.block_diff)
 	{
+		uint64_t full_nonce = __builtin_bswap64((uint64_t(nonce) << 32ull) | extra_nonce);
 		logger::inst().info("Block submit: ", actual_diff);
+		node::inst().send_job_result(cur_job, full_nonce, job.hash);
 	}
 
 	send_buf.len = snprintf(send_buf.buf, sizeof(send_buf.buf),

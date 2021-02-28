@@ -15,6 +15,7 @@ struct jobdata
 	pow_type type;
 	uint64_t block_diff;
 	uint32_t height;
+	uint32_t jobid;
 	uint8_t prepow[384];
 	uint32_t prepow_len;
 	v32 rx_seed;

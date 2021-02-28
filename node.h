@@ -66,6 +66,19 @@ public:
 		recv_thd.join();
 	}
 
+	void send_job_result(const jobdata& data, uint64_t nonce, const v32& powhash)
+	{
+		char buffer[1024];
+		const uint8_t* ph = powhash.data;
+		int len = snprintf(buffer, sizeof(buffer), R"({"id":"0","jsonrpc":"2.0","method":"submit","params":)"
+			R"({"height":%u,"job_id":%u,"nonce":%lu,"pow":{"RandomX":)"
+			R"([%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u]}}})""\n",
+			data.height, data.jobid, nonce, 
+			ph[ 0], ph[ 1], ph[ 2], ph[ 3], ph[ 4], ph[ 5], ph[ 6], ph[ 7], ph[ 8], ph[ 9], ph[10], ph[11], ph[12], ph[13], ph[14], ph[15],
+			ph[16], ph[17], ph[18], ph[19], ph[20], ph[21], ph[22], ph[23], ph[24], ph[25], ph[26], ph[27], ph[28], ph[29], ph[30], ph[31]);
+		send(sock_fd, buffer, len, 0);
+	}
+
 private:
 	node();
 

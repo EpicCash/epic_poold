@@ -150,7 +150,7 @@ v32 IntArrayToVector(const Value& arr_v)
 
 bool node::send_template_request()
 {
-	const char job_tmpl[] ="{\"id\":\"1\",\"jsonrpc\":\"2.0\",\"method\":\"getjobtemplate\",\"params\":{\"algorithm\":\"randomx\"}}";
+	const char job_tmpl[] ="{\"id\":\"1\",\"jsonrpc\":\"2.0\",\"method\":\"getjobtemplate\",\"params\":{\"algorithm\":\"randomx\"}}\n";
 	if(send(sock_fd, job_tmpl, sizeof(job_tmpl)-1, 0) != sizeof(job_tmpl)-1)
 	{
 		logger::inst().err("Node: Send socket error.");
@@ -217,6 +217,12 @@ ssize_t node::json_proc_msg(char* msg, size_t msglen)
 			const Value& error_msg = GetObjectMemberT(*error, "message");
 			const Value& error_cde = GetObjectMemberT(*error, "code");
 			logger::inst().err("Node RPC Error: ", error_msg.GetString(), " code: ", error_cde.GetInt());
+			return msglen;
+		}
+
+		if(strcmp(method, "submit") == 0)
+		{
+			logger::inst().info("Block submit OK!");
 			return msglen;
 		}
 
@@ -288,7 +294,8 @@ ssize_t node::json_proc_msg(char* msg, size_t msglen)
 
 			if(!has_our_epoch)
 				throw json_parse_error("We don't have our epoch");
-		
+
+			job->jobid = GetJsonUInt(res, "job_id");
 			job->height = height;
 			for(const Value& v : GetArray(GetObjectMemberT(res, "block_difficulty")))
 			{
