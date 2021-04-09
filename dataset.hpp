@@ -7,6 +7,7 @@
 #include <memory>
 #include <atomic>
 
+#include "log.hpp"
 #include "randomx.h"
 #include "vector32.h"
 
@@ -14,11 +15,30 @@ struct dataset
 {
 	dataset() : seed_id(0)
 	{
-		randomx_flags fl = (randomx_flags)(RANDOMX_FLAG_FULL_MEM | RANDOMX_FLAG_JIT | RANDOMX_FLAG_HARD_AES);
-		ch = randomx_alloc_cache(fl);
-		ds = randomx_alloc_dataset(fl);
+		if(!try_alloc_dataset((randomx_flags)(RANDOMX_FLAG_LARGE_PAGES | RANDOMX_FLAG_JIT)))
+		{
+			if(!try_alloc_dataset((randomx_flags)RANDOMX_FLAG_JIT))
+			{
+				logger::inst().err("Failed to allocate RandomX dataset (not enough RAM).");
+				exit(0);
+			}
+		}
 	}
-	
+
+	inline bool try_alloc_dataset(randomx_flags fl)
+	{
+		ds = randomx_alloc_dataset(fl);
+		if(ds == nullptr)
+			return false;
+		ch = randomx_alloc_cache(fl);
+		if(ch == nullptr)
+		{
+			randomx_release_dataset(ds);
+			return false;
+		}
+		return true;
+	}
+
 	~dataset()
 	{
 		randomx_release_dataset(ds);
