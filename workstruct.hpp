@@ -10,6 +10,19 @@ enum class pow_type : uint32_t
 	cuckoo
 };
 
+inline const char* pow_type_to_str(pow_type type)
+{
+	switch(type)
+	{
+	case pow_type::randomx:
+		return "randomx";
+	case pow_type::progpow:
+		return "progpow";
+	case pow_type::cuckoo:
+		return "cuckoo";
+	}
+}
+
 struct jobdata
 {
 	pow_type type;

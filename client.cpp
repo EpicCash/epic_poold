@@ -163,6 +163,7 @@ void client::process_method_login(int64_t call_id, const Value& args)
 	char hex_jobid[9];
 	char hex_target[9];
 	char hex_blob[768];
+	const char* pow_type = pow_type_to_str(cur_job.type);
 
 	memcpy(cur_job.prepow + cur_job.prepow_len - sizeof(uint32_t)*2, &extra_nonce, sizeof(uint32_t));
 
@@ -174,8 +175,8 @@ void client::process_method_login(int64_t call_id, const Value& args)
 	char seed_hash[65];
 	bin2hex(cur_job.rx_seed.data, cur_job.rx_seed.size, seed_hash);
 	send_buf.len = snprintf(send_buf.buf, sizeof(send_buf.buf), "{\"id\":%lld,\"jsonrpc\":\"2.0\",\"error\":null,\"result\":"
-		"{\"id\":\"decafbad0\",\"job\":{\"blob\":\"%s\",\"job_id\":\"%s\",\"target\":\"%s\",\"seed_hash\":\"%s\"},\"status\":\"OK\"}}\n",
-		(long long int)call_id, hex_blob, hex_jobid, hex_target, seed_hash);
+		"{\"id\":\"decafbad0\",\"job\":{\"blob\":\"%s\",\"job_id\":\"%s\",\"target\":\"%s\",\"pow_algo\":\"%s\",\"seed_hash\":\"%s\"},\"status\":\"OK\"}}\n",
+		(long long int)call_id, hex_blob, hex_jobid, hex_target, pow_type, seed_hash);
 
 	net_send();
 	logged_in = true;
@@ -284,7 +285,8 @@ bool client::on_new_block(int64_t timestamp_ms)
 	char hex_jobid[9];
 	char hex_target[9];
 	char hex_blob[768];
-	
+	const char* pow_type = pow_type_to_str(cur_job.type);
+
 	bin2hex(cur_job.prepow, cur_job.prepow_len, hex_blob);
 	bin2hex((const unsigned char*)&jobid, sizeof(uint32_t), hex_jobid);
 	uint32_t t = diff_to_target(fix_diff);
@@ -294,8 +296,8 @@ bool client::on_new_block(int64_t timestamp_ms)
 	bin2hex(cur_job.rx_seed.data, cur_job.rx_seed.size, seed_hash);
 
 	send_buf.len = snprintf(send_buf.buf, sizeof(send_buf.buf), "{\"jsonrpc\":\"2.0\",\"method\":\"job\",\"params\":"
-		"{\"blob\":\"%s\",\"job_id\":\"%s\",\"target\":\"%s\",\"seed_hash\":\"%s\"}}\n",
-		hex_blob, hex_jobid, hex_target,seed_hash);
+		"{\"blob\":\"%s\",\"job_id\":\"%s\",\"target\":\"%s\",\"pow_algo\":\"%s\",\"seed_hash\":\"%s\"}}\n",
+		hex_blob, hex_jobid, hex_target,pow_type,seed_hash);
 
 	net_send();
 	return true;
