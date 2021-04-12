@@ -17,7 +17,7 @@
 
 // Memory-holder object. We will allocate memory only in blocks of pool size, not for every single peer
 template<typename T>
-struct placement_mem
+struct alignas(16) placement_mem
 {
 	inline placement_mem() : mem{0}, ptr(nullptr) {}
 	inline ~placement_mem()
