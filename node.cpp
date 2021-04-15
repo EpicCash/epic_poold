@@ -86,6 +86,8 @@ void node::recv_main()
 		"{\"login\":\"%s\",\"pass\":\"%s\",\"agent\":\"epic_poold\"}}\n", 
 		jconf::inst().get_node_username(), jconf::inst().get_node_password());
 
+	last_job_ts = get_timestamp_ms();
+
 	if(ret <=0 || send(sock_fd, send_buffer, ret, 0) != ret)
 		return;
 
@@ -95,13 +97,21 @@ void node::recv_main()
 	setsockopt(sock_fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv,sizeof(struct timeval));
 
 	size_t datalen = 0;
+	uint64_t fatal_node_timeout_ms = jconf::inst().get_fatal_node_timeout() * 1000;
+	uint64_t template_timeout_ms = jconf::inst().get_template_timeout() * 1000;
 	while(run_loop)
 	{
 		ret = recv(sock_fd, recv_buffer + datalen, data_buffer_len - datalen, 0);
 
 		if(ret == -1 && (errno == EAGAIN || errno == EINTR || errno == EWOULDBLOCK))
 		{
-			if(get_timestamp_ms()-last_job_ts > 60*1000)
+			uint64_t last_job_delta = get_timestamp_ms()-last_job_ts;
+			if(last_job_delta > fatal_node_timeout_ms)
+			{
+				logger::inst().err("Fatal node timeout.");
+				exit(0);
+			}
+			if(last_job_delta > template_timeout_ms)
 			{
 				send_template_request();
 				last_job_ts = get_timestamp_ms();

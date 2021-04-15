@@ -37,6 +37,7 @@ public:
 	const char* get_tls_cert_filename();
 	const char* get_tls_cipher_list();
 
+	size_t get_fatal_node_timeout();
 	size_t get_template_timeout();
 
 private:

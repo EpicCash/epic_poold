@@ -25,7 +25,8 @@ enum configEnum
 	iTlsPort,
 	sTlsCert,
 	sTlsCipers,
-	iTemplateTimeout
+	iTemplateTimeout,
+	iFatalNodeTimeout
 };
 
 struct configVal
@@ -70,7 +71,8 @@ configVal oConfigValues[] = {
 	{iTlsPort, "tls_port", kNumberType, flag_u16bit},
 	{sTlsCert, "tls_certificate", kStringType, flag_none},
 	{sTlsCipers, "tls_ciper_list", kStringType, flag_none},
-	{iTemplateTimeout, "template_timeout", kNumberType, flag_unsigned}
+	{iTemplateTimeout, "template_timeout", kNumberType, flag_unsigned},
+	{iFatalNodeTimeout, "fatal_node_timeout", kNumberType, flag_unsigned}
 };
 
 constexpr size_t iConfigCnt = (sizeof(oConfigValues) / sizeof(oConfigValues[0]));

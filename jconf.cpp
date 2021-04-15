@@ -128,6 +128,11 @@ size_t jconf::get_template_timeout()
 	return d.configValues[iTemplateTimeout]->GetUint();
 }
 
+size_t jconf::get_fatal_node_timeout()
+{
+	return d.configValues[iFatalNodeTimeout]->GetUint();
+}
+
 inline std::string read_file(const char* filename, bool& error)
 {
 	struct stat sb;
