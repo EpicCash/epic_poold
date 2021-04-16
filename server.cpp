@@ -20,8 +20,7 @@ bool server::start()
 	while(!node::inst().has_first_job())
 	{
 		logger::inst().info("Waiting for a job...");
-		int slp = 10;
-		while((slp = sleep(slp)) != 0);
+		unix_sleep(10);
 	}
 
 	if(plain_port == 0 && tls_port == 0)
@@ -105,7 +104,7 @@ void server::listen_main()
 			if(err == EMFILE)
 			{
 				logger::inst().err("Max open files limit reached!");
-				while(sleep(1) == 0); // sleep for a second
+				unix_sleep(1);
 			}
 			else
 			{

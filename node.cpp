@@ -69,7 +69,7 @@ void node::thread_main()
 	{
 		if(!node_connect(jconf::inst().get_node_hostname(), jconf::inst().get_node_port()))
 		{
-			sleep(5);
+			unix_sleep(5);
 			continue;
 		}
 
@@ -77,6 +77,7 @@ void node::thread_main()
 
 		close(sock_fd);
 		sock_fd = -1;
+		unix_sleep(1); // Prevent rapid polling on repetivie errors
 	}
 }
 void node::recv_main()
@@ -282,7 +283,7 @@ ssize_t node::json_proc_msg(char* msg, size_t msglen)
 				uint32_t real_end = GetUint(epoch_data[1]);
 				if(real_end == 0 || real_end <= real_start)
 					throw json_parse_error("Epoch sanity check failed!");
-				real_end -= 1;
+				real_start += 1; //epic daemon bug
 
 				logger::inst().dbghi("Epoch: real_start: ", real_start, " real_end: ", real_end, " height: ", height);
 				if(height >= real_start && height <= real_end)

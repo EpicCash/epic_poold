@@ -1,5 +1,6 @@
 #pragma once
 #include <chrono>
+#include <unistd.h>
 
 inline int64_t get_walltime()
 {
@@ -22,3 +23,9 @@ inline int64_t get_timestamp()
 /* our db epoch is 01/01/2010 */
 inline int64_t db_time_to_walltime(int32_t db_time) { return int64_t(db_time) + 1262304000ll; }
 inline int32_t walltime_to_db_time(int64_t walltime) { return int32_t(walltime - 1262304000ll); }
+
+/* Handle wakeups while sleeping */
+inline void unix_sleep(int time_s)
+{
+	while((time_s = sleep(time_s)) != 0);
+}
