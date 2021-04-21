@@ -278,9 +278,8 @@ ssize_t node::json_proc_msg(char* msg, size_t msglen)
 
 			if(block_diff == 0)
 			{
-				logger::inst().info("Ignoring 0-diff job.");
-				send_template_request();
-				return msglen;
+				logger::inst().info("0-diff job. Trying to reconnect to epic node");
+				return -1;
 			}
 
 			jobs.emplace_back();
