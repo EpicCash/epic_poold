@@ -1,5 +1,5 @@
 #include "randomx.h"
-#include "hashpool.hpp"
+#include "rx_hashpool.hpp"
 #include <shared_mutex>
 #include <string.h>
 

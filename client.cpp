@@ -1,7 +1,7 @@
 #include "time.hpp"
 #include "client.hpp"
 #include "encdec.h"
-#include "hashpool.hpp"
+#include "rx_hashpool.hpp"
 
 constexpr uint32_t fix_diff = 4096;
 

@@ -15,7 +15,7 @@
 #include "jconf.hpp"
 #include "time.hpp"
 #include "server.hpp"
-#include "hashpool.hpp"
+#include "rx_hashpool.hpp"
 
 node::node() : domAlloc(json_dom_buf, json_buffer_len),
 	parseAlloc(json_parse_buf, json_buffer_len),
