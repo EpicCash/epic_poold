@@ -12,25 +12,28 @@ inline bool has_hardware_aes()
 	return (cpu_info[2] & (1 << 25)) != 0;
 }
 
-hashpool::hashpool() : ds_ctr(0)
+rx_hashpool::rx_hashpool() : ds_ctr(0)
 {
 	threads.reserve(hash_thd_count);
 	for(size_t i = 0; i < hash_thd_count; i++)
-		threads.emplace_back(&hashpool::hash_thd_main, this);
+		threads.emplace_back(&rx_hashpool::hash_thd_main, this);
 }
 
-void hashpool::hash_thd_main()
+void rx_hashpool::hash_thd_main()
 {
-	randomx_flags fl = (randomx_flags)(RANDOMX_FLAG_FULL_MEM | RANDOMX_FLAG_JIT | RANDOMX_FLAG_HARD_AES);
-	randomx_vm* v = randomx_create_vm(fl, nullptr, ds[0].ds);
+	int fl = RANDOMX_FLAG_JIT;
+	if(has_hardware_aes())
+		fl |= RANDOMX_FLAG_HARD_AES;
+
+	randomx_vm* v = randomx_create_vm((randomx_flags)fl, ds[0].ch, nullptr);
 	while(true)
 	{
-		check_job* job = jobs.pop();
+		rx_check_job* job = jobs.pop();
 
 		size_t dsidx;
 		for(dsidx = 0; dsidx < ds.size(); dsidx++)
 		{
-			if(ds[dsidx].seed_id == job->dataset_id)
+			if(ds[dsidx].ready_seed_id == job->dataset_id)
 				break;
 		}
 
@@ -43,8 +46,9 @@ void hashpool::hash_thd_main()
 			continue;
 		}
 
-		std::shared_lock<std::shared_timed_mutex> lk(ds[dsidx].mtx);
-		if(ds[dsidx].seed_id != job->dataset_id)
+		rx_dataset& nds = ds[dsidx];
+		std::shared_lock<std::shared_timed_mutex> lk(nds.mtx);
+		if(nds.ready_seed_id != job->dataset_id)
 		{
 			logger::inst().warn("Precalculated dataset was swapped out before we locked. We lost a share!");
 			job->hash.set_all_ones();
@@ -53,11 +57,10 @@ void hashpool::hash_thd_main()
 			continue;
 		}
 
-		dataset& mds = ds[dsidx];
-		randomx_vm_set_dataset(v, mds.ds);
+		randomx_vm_set_cache(v, nds.ch);
 		randomx_calculate_hash(v, job->data, job->data_len, static_cast<uint8_t*>(job->hash));
 
-		logger::inst().dbglo("Dataset id: ", mds.seed_id.load(), "\nhash: ", job->hash);
+		logger::inst().dbglo("Dataset id: ", nds.ready_seed_id.load(), "\nhash: ", job->hash);
 
 		char blob[1024];
 		bin2hex((uint8_t*)job->data, job->data_len, blob);
@@ -68,29 +71,10 @@ void hashpool::hash_thd_main()
 	}
 }
 
-void hashpool::dataset_thd_main(v32 seed, size_t ds_idx)
+void rx_hashpool::dataset_thd_main(size_t ds_idx)
 {
-	dataset& nds = ds[ds_idx];
+	rx_dataset& nds = ds[ds_idx];
 	std::lock_guard<std::shared_timed_mutex> lk(nds.mtx);
-
-	nds.ds_seed = seed;
-	nds.seed_id = seed.get_id();
-
-	logger::inst().info("Calculating dataset 0x", nds.seed_id.load(), " - ", seed);
-
-	nds.init_cache();
-
-	std::vector<std::thread> thd;
-	size_t thdcnt = std::thread::hardware_concurrency();
-	thd.reserve(thdcnt-1);
-
-	for(size_t i=1; i < thdcnt; i++)
-		thd.emplace_back(&dataset::calculate, &nds, i, thdcnt);
-
-	nds.calculate(0, thdcnt);
-
-	for(auto& t : thd)
-		t.join();
-
-	logger::inst().info("Calculating dataset 0x", nds.seed_id.load());
+	randomx_init_cache(nds.ch, static_cast<const uint8_t*>(nds.ds_seed), nds.ds_seed.size);
+	nds.ready_seed_id = nds.ds_seed.get_id();
 }

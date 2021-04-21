@@ -227,13 +227,13 @@ void client::process_method_submit(int64_t call_id, const Value& args)
 	memcpy(cur_job.prepow + cur_job.prepow_len - sizeof(uint32_t), &nonce, sizeof(uint32_t));
 
 	std::future<void> future;
-	hashpool::check_job job;
+	rx_hashpool::rx_check_job job;
 	job.data = cur_job.prepow;
 	job.data_len = cur_job.prepow_len;
 	job.dataset_id = cur_job.rx_seed.get_id();
 	future = job.ready.get_future();
 	
-	hashpool::inst().push_job(job);
+	rx_hashpool::inst().push_job(job);
 	future.wait();
 
 	if(job.error)

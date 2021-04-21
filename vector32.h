@@ -35,9 +35,10 @@ struct v32
 		return __builtin_bswap64(*reinterpret_cast<const uint64_t*>(data));
 	}
 
+	// 63 bit id of a vector used for atomics. Top bit is always one, so zero is never a valid id
 	uint64_t get_id() const
 	{
-		return reinterpret_cast<const uint64_t*>(data)[0];
+		return reinterpret_cast<const uint64_t*>(data)[0] & 8000000000000000ull;
 	}
 
 	v32& operator=(const v32& o)

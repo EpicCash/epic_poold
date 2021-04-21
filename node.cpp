@@ -310,14 +310,14 @@ ssize_t node::json_proc_msg(char* msg, size_t msglen)
 				{
 					has_our_epoch = true;
 					job->rx_seed = IntArrayToVector(epoch_data[2]);
-					if(!hashpool::inst().has_dataset(job->rx_seed.get_id()))
-						hashpool::inst().calculate_dataset(job->rx_seed);
+					if(!rx_hashpool::inst().has_dataset(job->rx_seed.get_id()))
+						rx_hashpool::inst().calculate_dataset(job->rx_seed);
 				}
 				else if(height < real_start)
 				{
 					job->rx_next_seed = IntArrayToVector(epoch_data[2]);
-					if(!hashpool::inst().has_dataset(job->rx_next_seed.get_id()))
-						hashpool::inst().calculate_dataset(job->rx_next_seed);
+					if(!rx_hashpool::inst().has_dataset(job->rx_next_seed.get_id()))
+						rx_hashpool::inst().calculate_dataset(job->rx_next_seed);
 				}
 				else
 					throw json_parse_error("Unidentfied epoch");
