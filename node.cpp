@@ -253,6 +253,33 @@ ssize_t node::json_proc_msg(char* msg, size_t msglen)
 			if(height == 0)
 			{
 				logger::inst().info("Ignoring 0-height job.");
+				send_template_request();
+				return msglen;
+			}
+
+			pow_type job_type;
+			uint64_t block_diff;
+			const char* algo = GetJsonString(res, "algorithm");
+			if(strcmp(algo, "randomx") == 0)
+				job_type = pow_type::randomx;
+			else if(strcmp(algo, "progpow") == 0)
+				job_type = pow_type::progpow;
+			else if(strcmp(algo, "cuckoo") == 0)
+				job_type = pow_type::cuckoo;
+			else
+				throw json_parse_error(std::string("Unknown algorithm: ") + algo);
+
+			for(const Value& v : GetArray(GetObjectMemberT(res, "block_difficulty")))
+			{
+				auto a = GetArray(v, 2);
+				if(strcmp(GetString(a[0]), algo) == 0)
+					block_diff = GetUint64(a[1]);
+			}
+
+			if(block_diff == 0)
+			{
+				logger::inst().info("Ignoring 0-diff job.");
+				send_template_request();
 				return msglen;
 			}
 
@@ -261,15 +288,8 @@ ssize_t node::json_proc_msg(char* msg, size_t msglen)
 			job->rx_seed.set_all_zero();
 			job->rx_next_seed.set_all_zero();
 
-			const char* algo = GetJsonString(res, "algorithm");
-			if(strcmp(algo, "randomx") == 0)
-				job->type = pow_type::randomx;
-			else if(strcmp(algo, "progpow") == 0)
-				job->type = pow_type::progpow;
-			else if(strcmp(algo, "cuckoo") == 0)
-				job->type = pow_type::cuckoo;
-			else
-				throw json_parse_error(std::string("Unknown algorithm: ") + algo);
+			job->type = job_type;
+			job->block_diff = block_diff;
 
 			auto epochs = GetArray(GetObjectMemberT(res, "epochs"));
 			if(epochs.Size() != 1 && epochs.Size() != 2)
@@ -308,12 +328,6 @@ ssize_t node::json_proc_msg(char* msg, size_t msglen)
 
 			job->jobid = GetJsonUInt(res, "job_id");
 			job->height = height;
-			for(const Value& v : GetArray(GetObjectMemberT(res, "block_difficulty")))
-			{
-				auto a = GetArray(v, 2);
-				if(strcmp(GetString(a[0]), algo) == 0)
-					job->block_diff = GetUint64(a[1]);
-			}
 
 			unsigned prepow_len;
 			const char* prepow = GetJsonString(res, "pre_pow", prepow_len);
