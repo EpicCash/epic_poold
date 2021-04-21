@@ -4,3 +4,6 @@
 [submodule "randomx"]
 	path = randomx
 	url = https://github.com/EpicCash/randomx.git
+[submodule "ethash"]
+	path = ethash
+	url = https://github.com/chfast/ethash
