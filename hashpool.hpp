@@ -18,8 +18,13 @@ struct rx_dataset
 		ch = randomx_alloc_cache((randomx_flags)(RANDOMX_FLAG_LARGE_PAGES | RANDOMX_FLAG_JIT));
 		if(ch == nullptr)
 		{
-			logger::inst().err("Failed to allocate RandomX dataset (not enough RAM).");
-			exit(0);
+			logger::inst().err("Failed to allocate RandomX cache with large pages. Enable large page support for faster hashing.");
+			ch = randomx_alloc_cache((randomx_flags)(RANDOMX_FLAG_JIT));
+			if(ch == nullptr)
+			{
+				logger::inst().err("Failed to allocate RandomX cache (not enough RAM).");
+				exit(0);
+			}
 		}
 	}
 
