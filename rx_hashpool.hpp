@@ -10,6 +10,7 @@
 #include "vector32.h"
 #include "thdq.hpp"
 #include "log.hpp"
+#include "check_job.hpp"
 
 struct rx_dataset
 {
@@ -27,6 +28,11 @@ struct rx_dataset
 			}
 		}
 	}
+
+	rx_dataset(const rx_dataset& r) = delete;
+	rx_dataset& operator=(const rx_dataset& r) = delete;
+	rx_dataset(rx_dataset&& r) = delete;
+	rx_dataset& operator=(rx_dataset&& r) = delete;
 
 	~rx_dataset()
 	{
@@ -56,14 +62,10 @@ public:
 	constexpr static size_t hash_len = 32;
 	constexpr static size_t hash_thd_count = 2;
 
-	struct rx_check_job
+	struct rx_check_job : public check_job
 	{
-		const void* data;
-		size_t data_len;
-		v32 hash;
-		bool error;
-		uint64_t dataset_id;
 		std::promise<void> ready;
+		uint64_t dataset_id;
 	};
 
 	inline static rx_hashpool& inst()

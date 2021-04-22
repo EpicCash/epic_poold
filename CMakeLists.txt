@@ -3,6 +3,9 @@ project(epic_poold)
 
 include_directories("rapidjson/include")
 
+set(include_dir ${PROJECT_SOURCE_DIR}/ethash/include)
+add_subdirectory(ethash/lib)
+
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -20,4 +23,4 @@ file(GLOB SRCFILES *.cpp)
 
 add_executable(epic_poold ${SRCFILES} ${randomx})
 target_include_directories(epic_poold PUBLIC randomx/src)
-target_link_libraries(epic_poold Threads::Threads) #${OPENSSL_LIBRARIES})
+target_link_libraries(epic_poold Threads::Threads keccak ethash) #${OPENSSL_LIBRARIES})

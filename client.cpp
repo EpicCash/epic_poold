@@ -1,6 +1,8 @@
 #include "time.hpp"
 #include "client.hpp"
 #include "encdec.h"
+
+#include "pp_hashpool.hpp"
 #include "rx_hashpool.hpp"
 
 constexpr uint32_t fix_diff = 4096;
@@ -224,17 +226,7 @@ void client::process_method_submit(int64_t call_id, const Value& args)
 		return;
 	}
 
-	memcpy(cur_job.prepow + cur_job.prepow_len - sizeof(uint32_t), &nonce, sizeof(uint32_t));
-
-	std::future<void> future;
-	rx_hashpool::rx_check_job job;
-	job.data = cur_job.prepow;
-	job.data_len = cur_job.prepow_len;
-	job.dataset_id = cur_job.rx_seed.get_id();
-	future = job.ready.get_future();
-	
-	rx_hashpool::inst().push_job(job);
-	future.wait();
+	check_job job = check_client_work(nonce);
 
 	if(job.error)
 	{
@@ -268,6 +260,52 @@ void client::process_method_keepalive(int64_t call_id, const Value& args)
 	send_buf.len = snprintf(send_buf.buf, sizeof(send_buf.buf),
 		"{\"id\":%lld,\"jsonrpc\":\"2.0\",\"error\":null,\"result\":{\"status\":\"OK\"}}\n", (long long int)call_id);
 	net_send();
+}
+
+check_job client::check_client_work(uint32_t nonce)
+{
+	std::future<void> future;
+	switch(cur_job.type)
+	{
+		case pow_type::randomx:
+		{
+			memcpy(cur_job.prepow + cur_job.prepow_len - sizeof(uint32_t), &nonce, sizeof(uint32_t));
+
+			rx_hashpool::rx_check_job job;
+			job.data = cur_job.prepow;
+			job.data_len = cur_job.prepow_len;
+			job.dataset_id = cur_job.rx_seed.get_id();
+			future = job.ready.get_future();
+
+			rx_hashpool::inst().push_job(job);
+			future.wait();
+			return std::move(job);
+		}
+		case pow_type::progpow:
+		{
+			uint64_t total_nonce = extra_nonce;
+			total_nonce <<= 32;
+			total_nonce |= nonce;
+
+			pp_hashpool::pp_check_job job;
+			job.data = cur_job.prepow;
+			job.data_len = cur_job.prepow_len - sizeof(uint64_t);
+			job.block_number = cur_job.height;
+			job.nonce = total_nonce;
+			future = job.ready.get_future();
+
+			pp_hashpool::inst().push_job(job);
+			future.wait();
+			return std::move(job);
+		}
+		default:
+		{
+			check_job job;
+			job.error = true;
+			job.hash.set_all_ones();
+			return job;
+		}
+	}
 }
 
 bool client::on_new_block(int64_t timestamp_ms)

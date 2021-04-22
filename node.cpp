@@ -15,7 +15,9 @@
 #include "jconf.hpp"
 #include "time.hpp"
 #include "server.hpp"
+
 #include "rx_hashpool.hpp"
+#include "pp_hashpool.hpp"
 
 node::node() : domAlloc(json_dom_buf, json_buffer_len),
 	parseAlloc(json_parse_buf, json_buffer_len),
@@ -324,6 +326,8 @@ ssize_t node::json_proc_msg(char* msg, size_t msglen)
 
 			if(!has_our_epoch)
 				throw json_parse_error("We don't have our epoch");
+
+			pp_hashpool::inst().notify_block(height);
 
 			job->jobid = GetJsonUInt(res, "job_id");
 			job->height = height;

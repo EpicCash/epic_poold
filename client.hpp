@@ -8,6 +8,7 @@
 #include "json.h"
 #include "workstruct.hpp"
 #include "node.h"
+#include "check_job.hpp"
 
 struct sock_buffer
 {
@@ -187,4 +188,6 @@ protected:
 	void process_method_keepalive(int64_t call_id, const Value& args);
 	
 	void send_error_response(int64_t call_id, const char* msg);
+
+	check_job check_client_work(uint32_t nonce); 
 };
