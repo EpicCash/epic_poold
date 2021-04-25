@@ -177,8 +177,10 @@ void client::process_method_login(int64_t call_id, const Value& args)
 	char seed_hash[65];
 	bin2hex(cur_job.rx_seed.data, cur_job.rx_seed.size, seed_hash);
 	send_buf.len = snprintf(send_buf.buf, sizeof(send_buf.buf), "{\"id\":%lld,\"jsonrpc\":\"2.0\",\"error\":null,\"result\":"
-		"{\"id\":\"decafbad0\",\"job\":{\"blob\":\"%s\",\"job_id\":\"%s\",\"target\":\"%s\",\"pow_algo\":\"%s\",\"seed_hash\":\"%s\"},\"status\":\"OK\"}}\n",
-		(long long int)call_id, hex_blob, hex_jobid, hex_target, pow_type, seed_hash);
+		"{\"id\":\"decafbad0\",\"job\":"
+		"{\"blob\":\"%s\",\"job_id\":\"%s\",\"target\":\"%s\",\"pow_algo\":\"%s\",\"seed_hash\":\"%s\",\"height\":%u},"
+		"\"status\":\"OK\"}}\n",
+		(long long int)call_id, hex_blob, hex_jobid, hex_target, pow_type, seed_hash, cur_job.height);
 
 	net_send();
 	logged_in = true;
@@ -334,8 +336,8 @@ bool client::on_new_block(int64_t timestamp_ms)
 	bin2hex(cur_job.rx_seed.data, cur_job.rx_seed.size, seed_hash);
 
 	send_buf.len = snprintf(send_buf.buf, sizeof(send_buf.buf), "{\"jsonrpc\":\"2.0\",\"method\":\"job\",\"params\":"
-		"{\"blob\":\"%s\",\"job_id\":\"%s\",\"target\":\"%s\",\"pow_algo\":\"%s\",\"seed_hash\":\"%s\"}}\n",
-		hex_blob, hex_jobid, hex_target,pow_type,seed_hash);
+		"{\"blob\":\"%s\",\"job_id\":\"%s\",\"target\":\"%s\",\"pow_algo\":\"%s\",\"seed_hash\":\"%s\",\"height\":%u}}\n",
+		hex_blob, hex_jobid, hex_target, pow_type, seed_hash, cur_job.height);
 
 	net_send();
 	return true;

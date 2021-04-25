@@ -12,9 +12,11 @@
 #include "log.hpp"
 #include "check_job.hpp"
 
+constexpr uint64_t invalid_id = uint64_t(-1);
+
 struct rx_dataset
 {
-	rx_dataset() : loaded_seed_id(0), ready_seed_id(0)
+	rx_dataset() : loaded_seed_id(invalid_id), ready_seed_id(invalid_id)
 	{
 		ch = randomx_alloc_cache((randomx_flags)(RANDOMX_FLAG_LARGE_PAGES | RANDOMX_FLAG_JIT));
 		if(ch == nullptr)
@@ -89,7 +91,7 @@ public:
 	inline void calculate_dataset(const v32& dataset_seed)
 	{
 		size_t i = ds_ctr.fetch_add(1) % ds.size();
-		ds[i].ready_seed_id = 0;
+		ds[i].ready_seed_id = invalid_id;
 		ds[i].ds_seed = dataset_seed;
 		ds[i].loaded_seed_id = dataset_seed.get_id();
 		std::thread thd(&rx_hashpool::dataset_thd_main, this, i);

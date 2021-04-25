@@ -47,6 +47,13 @@ void pp_hashpool::hash_thd_main()
 		}
 
 		ethash_hash256 header_hash = ethash::keccak256(job->data, job->data_len);
+
+		v32 hh = header_hash.bytes;
+		logger::inst().dbglo("Nonce: ", job->nonce, "\nhh: ", hh, "\nbn: ", job->block_number);
+		char blob[1024];
+		bin2hex((uint8_t*)job->data, job->data_len, blob);
+		logger::inst().dbglo("blob len: ", job->data_len, " blob: ", blob);
+
 		job->res = progpow::hash(*nds.dataset_ptr, job->block_number, header_hash, job->nonce);
 		job->hash = job->res.final_hash.bytes;
 
